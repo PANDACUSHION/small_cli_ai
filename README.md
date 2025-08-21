@@ -1,90 +1,68 @@
-# AI CLI (Powered by Gemini)
+AI CLI (Powered by Gemini)
 
-A terminal-based CLI powered by **Google Gemini AI** for chat and file analysis.
+A terminal-based CLI powered by Google Gemini AI for chat and file analysis.
+Features
 
----
+    Chat with Gemini AI directly in your terminal.
 
-## Features
+    Autocomplete suggestions from chat history and file paths.
 
-- Chat with Gemini AI directly in your terminal.
-- Autocomplete suggestions from chat history and file paths.
-- Analyze and provide feedback on local files.
-- Color-coded, easy-to-read responses in the terminal.
+    Analyze and provide feedback on local files.
 
----
+    Color-coded, easy-to-read responses in the terminal.
 
-## Requirements
+Requirements
 
-- Node.js (v18+ recommended)
-- npm
-- Google Gemini API key
+    Node.js (v18+ recommended)
 
----
+    npm
 
-## Setup
+    Google Gemini API key
 
-1. **Clone the repository:**
+Setup
 
-   ```bash
-   git clone <repository-url>
-   cd <repository-folder>
+    Clone the repository:
 
-   ```
+    git clone <repository-url>
+    cd <repository-folder>
 
-2. **Create a `.env` file at the root of the project:**
+    Install dependencies:
 
-   ```env
-   GEMINI_API_KEY=your_gemini_api_key_here
-   ```
+    npm install
 
-3. **Install dependencies:**
+    Install the CLI globally (optional):
 
-   ```bash
-   npm install
-   ```
+    sudo npm install -g .
 
-4. **Install the CLI globally (optional):**
+Usage
+Run in interactive chat mode:
 
-   ```bash
-   sudo npm install -g .
-   ```
-
----
-
-## Usage
-
-### Run in interactive chat mode:
-
-```bash
 askcli
-```
 
-- Type your questions directly in the terminal.
-- Use `exit` to quit.
-- Type `checkfile <path/to/file>` to analyze a file.
+    When you run the CLI for the first time, it will prompt you to enter your Gemini API key. This key will be saved securely for future use.
 
-### Run a single question:
+    Type your questions directly in the terminal.
 
-```bash
+    Use exit to quit.
+
+    Type checkfile <path/to/file> to analyze a file.
+
+Run a single question:
+
 askcli "Your question here"
-```
 
-### Analyze a specific file:
+Analyze a specific file:
 
-```bash
 askcli checkfile path/to/file.js
-```
 
----
+Notes
 
-## Notes
+    Autocomplete supports both previous questions and local file paths.
 
-- Autocomplete supports both previous questions and local file paths.
-- Responses are formatted with colors and symbols for readability.
-- Ensure your Gemini API key is valid and set in `.env`.
+    Responses are formatted with colors and symbols for readability.
 
----
+    The API key is now stored in a global configuration file after the initial setup.
 
-## License
+License
 
 MIT License
