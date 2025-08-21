@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 import inquirer from "inquirer";
-import inquirerAutocompletePrompt from "inquirer-autocomplete-prompt";
 import chalk from "chalk";
 import fs from "fs";
 import path from "path";
 import os from "os";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-inquirer.registerPrompt("autocomplete", inquirerAutocompletePrompt);
-
+// Configuration management
 const configDir = path.join(os.homedir(), ".config", "manjil-cli");
 const configPath = path.join(configDir, "config.json");
 
@@ -32,7 +30,7 @@ async function promptForApiKeyAndSave() {
       await fs.promises.mkdir(configDir, { recursive: true });
       await fs.promises.writeFile(
         configPath,
-        JSON.stringify({ geminiApiKey: apiKey })
+        JSON.stringify({ geminiApiKey: apiKey }, null, 2)
       );
       console.log(chalk.green("API Key saved successfully!"));
       process.env.GEMINI_API_KEY = apiKey;
@@ -67,6 +65,9 @@ async function loadApiKeyFromConfig() {
   return null;
 }
 
+/**
+ * Initialize API key from config or prompt user
+ */
 async function initialize() {
   const keyFromConfig = await loadApiKeyFromConfig();
   if (keyFromConfig) {
@@ -86,27 +87,21 @@ async function initialize() {
 // Initialize the Google Generative AI client.
 let genAI;
 let model;
-let chatHistory = [];
+let chat;
 
 /**
  * Formats the Gemini model's response for better readability in the terminal.
- * Converts markdown-like syntax to colored and styled text.
  * @param {string} text The raw text response from the Gemini model.
  * @returns {string} The formatted text.
  */
 function formatResponseForTerminal(text) {
-  let formattedText = text.replace(/\*\*(.*?)\*\*/g, chalk.bold("$1"));
-  formattedText = formattedText.replace(/^#\s(.*?)$/gm, chalk.bold.cyan("$1"));
-  formattedText = formattedText.replace(
-    /^\* (.*?)$/gm,
-    `  ${chalk.green("•")} $1`
-  );
-  formattedText = formattedText.replace(
-    /^(\d+\.)\s(.*?)$/gm,
-    `  ${chalk.green("$1")} $2`
-  );
-  formattedText = formattedText.replace(/`(.*?)`/g, chalk.bgGray("$1"));
-  return formattedText;
+  return text
+    .replace(/#{1,6}\s?(.*)/g, chalk.bold.cyan("$1"))
+    .replace(/\*\*(.*?)\*\*/g, chalk.bold("$1"))
+    .replace(/\*(.*?)\*/g, chalk.italic("$1"))
+    .replace(/`([^`]+)`/g, chalk.bgGray.white(" $1 "))
+    .replace(/^\* (.*?)$/gm, `  ${chalk.green("•")} $1`)
+    .replace(/^(\d+\.)\s(.*?)$/gm, `  ${chalk.green("$1")} $2`);
 }
 
 /**
@@ -115,10 +110,9 @@ function formatResponseForTerminal(text) {
  */
 async function askQuestion(question) {
   try {
-    const result = await model.generateContent(question);
+    const result = await chat.sendMessage(question);
     const formattedResponse = formatResponseForTerminal(result.response.text());
     console.log(chalk.yellow("\nGemini: ") + chalk.white(formattedResponse));
-    chatHistory.unshift(question);
   } catch (err) {
     console.error(chalk.red("Error: "), err.message);
   }
@@ -126,10 +120,10 @@ async function askQuestion(question) {
 
 /**
  * Reads the content of a file and sends it to the Gemini model for analysis.
- * The file path is resolved relative to the current working directory.
  * @param {string} filePath The path to the file to be analyzed.
+ * @param {boolean} continueChat Whether to continue with chat mode after analysis
  */
-async function checkFile(filePath) {
+async function checkFile(filePath, continueChat = false) {
   const absPath = path.resolve(process.cwd(), filePath);
 
   if (!fs.existsSync(absPath)) {
@@ -141,13 +135,23 @@ async function checkFile(filePath) {
   console.log(chalk.cyan(`Reading file: ${absPath}`));
 
   try {
-    const result = await model.generateContent(
-      `Analyze this file and provide feedback:\n\n${content}`
+    const result = await chat.sendMessage(
+      `Analyze this file and provide feedback:\n\nFile: ${filePath}\n\nContent:\n${content}`
     );
     const formattedResponse = formatResponseForTerminal(result.response.text());
     console.log(
-      chalk.green("\nGemini’s Analysis:\n") + chalk.white(formattedResponse)
+      chalk.green("\nGemini's Analysis:\n") + chalk.white(formattedResponse)
     );
+
+    // If we should continue with chat after analysis
+    if (continueChat) {
+      console.log(
+        chalk.gray(
+          "\nFile context is now loaded. You can continue asking questions about it.\n"
+        )
+      );
+      await chatMode();
+    }
   } catch (err) {
     console.error(chalk.red("Error analyzing file: "), err.message);
   }
@@ -157,92 +161,94 @@ async function checkFile(filePath) {
  * The main interactive chat loop for the CLI.
  */
 async function chatMode() {
-  console.log(chalk.green("Welcome to Manjil Cli (powered by Gemini)"));
+  console.log(chalk.green("💬 Welcome to Manjil CLI (powered by Gemini)"));
+  console.log(
+    chalk.gray(
+      "Commands: 'exit' to quit, 'checkfile <path>' to analyze files, 'file <path>' to add context"
+    )
+  );
+  console.log(chalk.gray("Memory persists during this session only.\n"));
 
   while (true) {
     const { question } = await inquirer.prompt([
       {
-        type: "autocomplete",
+        type: "input",
         name: "question",
-        message: "Ask Gemini (or type 'exit' to quit):",
-        source: async (answersSoFar, input) => {
-          input = input || "";
-
-          const historySuggestions = chatHistory
-            .filter(item => item.toLowerCase().includes(input.toLowerCase()))
-            .reverse();
-
-          const fileSuggestions = [];
-
-          if (input.includes("/") || input.includes("\\")) {
-            try {
-              const absDir = path.resolve(process.cwd(), path.dirname(input));
-              const files = await fs.promises.readdir(absDir);
-              const matchingFiles = files
-                .filter(file =>
-                  file
-                    .toLowerCase()
-                    .includes(path.basename(input).toLowerCase())
-                )
-                // Convert the absolute path back to a relative path from the current working directory.
-                .map(file =>
-                  path.relative(process.cwd(), path.join(absDir, file))
-                );
-              fileSuggestions.push(...matchingFiles);
-            } catch (error) {
-              // Ignore errors if the path is invalid or does not exist.
-            }
-          }
-
-          const allSuggestions = [
-            ...new Set([...fileSuggestions, ...historySuggestions]),
-          ];
-
-          if (fileSuggestions.length > 0 && historySuggestions.length > 0) {
-            return [
-              ...fileSuggestions,
-              new inquirer.Separator("— History —"),
-              ...historySuggestions,
-            ];
-          }
-
-          return allSuggestions;
-        },
-        pageSize: 10,
-        suggestOnly: true,
+        message: chalk.cyan("Ask Gemini (or type 'exit' to quit):"),
       },
     ]);
 
     if (question.toLowerCase() === "exit") {
-      console.log(chalk.blue("Goodbye!"));
+      console.log(chalk.blue("\nGoodbye! (Session memory cleared)"));
       break;
     }
 
+    // Handle checkfile command (with analysis and response)
     if (question.toLowerCase().startsWith("checkfile ")) {
       const filePath = question.slice("checkfile ".length).trim();
       await checkFile(filePath);
-    } else {
+      continue; // Continue the chat loop after checkfile
+    }
+    // Handle file command (context only, no analysis response)
+    else if (question.toLowerCase().startsWith("file ")) {
+      const filePath = question.slice("file ".length).trim();
+      const absPath = path.resolve(process.cwd(), filePath);
+
+      if (!fs.existsSync(absPath)) {
+        console.log(chalk.red(`File not found: ${absPath}`));
+        continue;
+      }
+
+      const content = fs.readFileSync(absPath, "utf-8");
+      console.log(chalk.cyan(`Adding file context: ${absPath}`));
+
+      try {
+        await chat.sendMessage(
+          `Here is a code file for context (${filePath}):\n${content}`
+        );
+        console.log(chalk.green("File context added to conversation."));
+      } catch (err) {
+        console.error(chalk.red("Error adding file context: "), err.message);
+      }
+    }
+    // Regular question
+    else {
       await askQuestion(question);
     }
   }
 }
 
 /**
+ * Handle graceful exit on Ctrl+C
+ */
+process.on("SIGINT", () => {
+  console.log(chalk.blue("\n\nGoodbye! (Session memory cleared)"));
+  process.exit(0);
+});
+
+/**
  * The entry point for the CLI application.
- * Handles command-line arguments to run in file analysis or chat mode.
  */
 async function main() {
   await initialize();
+
   genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+  // Start chat session with persistent memory
+  chat = model.startChat({ history: [] });
 
   const args = process.argv.slice(2);
 
   if (args[0] === "checkfile" && args[1]) {
-    await checkFile(args[1]);
+    // After checkfile from command line, continue with chat
+    await checkFile(args[1], true);
   } else if (args.length > 0) {
     const question = args.join(" ");
     await askQuestion(question);
+    // After answering a direct question, start chat mode
+    console.log(chalk.gray("\nContinuing with interactive chat...\n"));
+    await chatMode();
   } else {
     await chatMode();
   }
