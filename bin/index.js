@@ -7,8 +7,8 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-
 inquirer.registerPrompt("autocomplete", inquirerAutocompletePrompt);
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,7 +26,7 @@ function suppressConsoleLogs(callback) {
 
 // Wrap the dotenv config call to prevent log messages
 suppressConsoleLogs(() => {
-  dotenv.config({ path: path.resolve(__dirname, "..", ".env") });
+  dotenv.config({ path: path.resolve(__dirname, "..", ".env"), quiet: true });
 });
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
